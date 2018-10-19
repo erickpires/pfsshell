@@ -76,7 +76,7 @@ typedef struct _iop_file
     s32 unit;                   /* HW device unit number.  */
     struct _iop_device *device; /* Device driver.  */
     void *privdata;             /* The device driver can use this however it
-				   wants.  */
+                   wants.  */
 } iop_file_t;
 
 typedef struct _iop_device
@@ -110,7 +110,7 @@ typedef struct _iop_device
 #define sync iomanx_sync
 #define mount iomanx_mount
 #define umount iomanx_umount
-#define lseek64 iomanx_lseek64
+// #define lseek64 iomanx_lseek64
 #define devctl iomanx_devctl
 #define symlink iomanx_symlink
 #define readlink iomanx_readlink

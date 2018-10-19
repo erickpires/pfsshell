@@ -48,22 +48,22 @@ iop_device_t **GetDeviceList(void)
     return (dev_list);
 }
 
-int _start(int argc, char **argv)
-{
-    if (RegisterLibraryEntries(&_exp_iomanx) != 0) {
-        return MODULE_NO_RESIDENT_END;
-    }
+// int _start(int argc, char **argv)
+// {
+//     if (RegisterLibraryEntries(&_exp_iomanx) != 0) {
+//         return MODULE_NO_RESIDENT_END;
+//     }
 
-    memset(dev_list, 0, sizeof(dev_list));
-    memset(file_table, 0, sizeof(file_table));
+//     memset(dev_list, 0, sizeof(dev_list));
+//     memset(file_table, 0, sizeof(file_table));
 
-    // if(hook_ioman() != 0)
-    // {
-    //     return MODULE_NO_RESIDENT_END;
-    // }
+//     // if(hook_ioman() != 0)
+//     // {
+//     //     return MODULE_NO_RESIDENT_END;
+//     // }
 
-    return MODULE_RESIDENT_END;
-}
+//     return MODULE_RESIDENT_END;
+// }
 
 int shutdown()
 {
@@ -459,7 +459,7 @@ int getstat(const char *name, iox_stat_t *stat)
 
     if (res == 0) {
         /* If this is a legacy device (such as mc:) then we need to convert the mode
-    	   variable to iomanX's extended format.  */
+           variable to iomanX's extended format.  */
         if ((file.device->type & 0xf0000000) != IOP_DT_FSEXT)
             stat->mode = mode2modex(stat->mode);
     }
@@ -476,7 +476,7 @@ int chstat(const char *name, iox_stat_t *stat, unsigned int mask)
         return -ENODEV;
 
     /* If this is a legacy device (such as mc:) then we need to convert the mode
-	   variable to iomanX's extended format.  */
+       variable to iomanX's extended format.  */
     if ((file.device->type & 0xf0000000) != IOP_DT_FSEXT)
         stat->mode = modex2mode(stat->mode);
 
@@ -567,7 +567,7 @@ int umount(const char *fsname)
     return file.device->ops->umount(&file, filename);
 }
 
-long long lseek64(int fd, long long offset, int whence)
+s64 lseek64(int fd, s64 offset, int whence)
 {
     iop_file_t *f = get_file(fd);
 
