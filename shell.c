@@ -338,7 +338,8 @@ static int do_cd(context_t *ctx, int argc, char *argv[])
     return (result);
 }
 
-static int create_dir(char* pfs_path, char* dir_name) {
+static int create_dir(char* pfs_path, char* dir_name)
+{
     char tmp[256];
     strcpy(tmp, "pfs0:");
     strcat(tmp, pfs_path);
@@ -410,8 +411,9 @@ static int do_get(context_t *ctx, int argc, char *argv[])
     return (result);
 }
 
-static int put_file(char* pfs_path, char* filename) {
-        int result = 0;
+static int put_file(char* pfs_path, char* filename)
+{
+    int result = 0;
     char tmp[256];
     strcpy(tmp, "pfs0:");
     strcat(tmp, pfs_path);
@@ -452,16 +454,62 @@ static int put_file(char* pfs_path, char* filename) {
     return (result);
 }
 
+static int path_exists(char* pfs_path_prefix, char* path)
+{
+    char tmp[256];
+    strcpy(tmp, "pfs0:");
+    strcat(tmp, pfs_path_prefix);
+    if (tmp[strlen(tmp) - 1] != '/')
+        strcat(tmp, "/");
+    strcat(tmp, path);
+
+    iox_stat_t stat;
+    int result = iomanx_getstat(tmp, &stat);
+
+    return result == 0;
+}
+
+static int create_dirs_from_path(char* pfs_path, char* path)
+{
+    char tmp[256];
+    strcpy(tmp, pfs_path);
+
+    while(*path)
+    {
+        char* slash_ptr = strstr(path, "/");
+        if(!slash_ptr) {return 0; }
+
+        int diff = slash_ptr - path;
+        char buff[256];
+
+        sprintf(buff, "%.*s", diff, path);
+
+        if(!path_exists(tmp, buff))
+        {
+            printf("Creating dir %s\n", buff);
+            int result = create_dir(tmp, buff);
+            if(result) { return result; }
+        }
+
+        strcat(tmp, "/");
+        strcat(tmp, buff);
+        path = slash_ptr + 1;
+    }
+
+    return 0;
+}
+
 static int do_put(context_t *ctx, int argc, char *argv[])
 {
-    if(strstr(argv[1], "/")) {
-        fprintf(stderr, "(!) The filename cannot contain '/'.\n");
-        return -1;
+    if(strstr(argv[1], "/"))
+    {
+        create_dirs_from_path(ctx->path, argv[1]);
     }
 
     struct stat path_stat;
     stat(argv[1], &path_stat);
-    if(S_ISDIR(path_stat.st_mode)) {
+    if(S_ISDIR(path_stat.st_mode))
+    {
         fprintf(stderr, "(!) Directories are not supported.\n");
         return -1;
     }
