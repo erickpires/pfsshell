@@ -282,6 +282,7 @@ static int do_umount(context_t *ctx, int argc, char *argv[])
     int result = iomanx_umount("pfs0:");
     if (result >= 0) {
         ctx->mount = 0;
+        strcpy(ctx->path, "/");
         return (0);
     } else {
         fprintf(stderr, "(!) umount: %s.\n", strerror(-result));
