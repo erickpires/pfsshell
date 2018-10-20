@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 #include <stdbool.h>
 
 #include "util.h"
@@ -24,6 +25,13 @@ enum requirements {
     need_mount = 4,     /* partition should be mounted */
     need_no_mount = 8,  /* partition should not be mounted */
 };
+
+static bool should_exit = false;
+
+void handle_sigint(int sig) {
+    should_exit = true;
+}
+
 static int check_requirements(context_t *ctx, enum requirements req)
 {
     if ((req & need_device) && !ctx->setup) {
@@ -109,7 +117,7 @@ static int shell_loop(FILE *in, FILE *out, FILE *err,
     char *line = NULL;
     size_t len = 0;
 
-    while (true) {
+    while (!should_exit) {
         fputs(prompt, err);
         getline(&line, &len, stdin);
         if (!strncmp(line, "exit", 4) || !strncmp(line, "quit", 4) || !strncmp(line, "bye", 3)) {
@@ -566,6 +574,8 @@ int shell(FILE *in, FILE *out, FILE *err)
     context_t ctx;
     memset(&ctx, 0, sizeof(ctx));
     strcpy(ctx.path, "/");
+
+    signal(SIGINT, handle_sigint);
 
     fputs(
         "pfsshell for POSIX systems\n"
