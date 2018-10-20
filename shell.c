@@ -2,6 +2,8 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -336,18 +338,22 @@ static int do_cd(context_t *ctx, int argc, char *argv[])
     return (result);
 }
 
-static int do_mkdir(context_t *ctx, int argc, char *argv[])
-{
+static int create_dir(char* pfs_path, char* dir_name) {
     char tmp[256];
     strcpy(tmp, "pfs0:");
-    strcat(tmp, ctx->path);
+    strcat(tmp, pfs_path);
     if (tmp[strlen(tmp) - 1] != '/')
         strcat(tmp, "/");
-    strcat(tmp, argv[1]);
+    strcat(tmp, dir_name);
     int result = iomanx_mkdir(tmp, 0777);
     if (result < 0)
         fprintf(stderr, "(!) %s: %s.\n", tmp, strerror(-result));
     return (result);
+}
+
+static int do_mkdir(context_t *ctx, int argc, char *argv[])
+{
+    return create_dir(ctx->path, argv[1]);
 }
 
 static int do_rmdir(context_t *ctx, int argc, char *argv[])
@@ -404,17 +410,16 @@ static int do_get(context_t *ctx, int argc, char *argv[])
     return (result);
 }
 
-static int do_put(context_t *ctx, int argc, char *argv[])
-{
-    int result = 0;
+static int put_file(char* pfs_path, char* filename) {
+        int result = 0;
     char tmp[256];
     strcpy(tmp, "pfs0:");
-    strcat(tmp, ctx->path);
+    strcat(tmp, pfs_path);
     if (tmp[strlen(tmp) - 1] != '/')
         strcat(tmp, "/");
-    strcat(tmp, argv[1]);
+    strcat(tmp, filename);
 
-    int in = open(argv[1], O_RDONLY |
+    int in = open(filename, O_RDONLY |
 #ifdef O_BINARY
                                O_BINARY
 #else
@@ -443,8 +448,25 @@ static int do_put(context_t *ctx, int argc, char *argv[])
             fprintf(stderr, "(!) %s: %s.\n", tmp, strerror(-out)), result = out;
         (void)close(in);
     } else
-        perror(argv[1]), result = -1;
+        perror(filename), result = -1;
     return (result);
+}
+
+static int do_put(context_t *ctx, int argc, char *argv[])
+{
+    if(strstr(argv[1], "/")) {
+        fprintf(stderr, "(!) The filename cannot contain '/'.\n");
+        return -1;
+    }
+
+    struct stat path_stat;
+    stat(argv[1], &path_stat);
+    if(S_ISDIR(path_stat.st_mode)) {
+        fprintf(stderr, "(!) Directories are not supported.\n");
+        return -1;
+    }
+
+    return put_file(ctx->path, argv[1]);
 }
 
 static int do_rm(context_t *ctx, int argc, char *argv[])
