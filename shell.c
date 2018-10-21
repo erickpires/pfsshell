@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <dirent.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -151,6 +152,65 @@ static int shell_loop(FILE *in, FILE *out, FILE *err,
         }
     }
     return (0);
+}
+
+static int create_dir(char* pfs_path, char* dir_name)
+{
+    char tmp[256];
+    strcpy(tmp, "pfs0:");
+    strcat(tmp, pfs_path);
+    if (tmp[strlen(tmp) - 1] != '/')
+        strcat(tmp, "/");
+    strcat(tmp, dir_name);
+    int result = iomanx_mkdir(tmp, 0777);
+    if (result < 0)
+        fprintf(stderr, "(!) %s: %s.\n", tmp, strerror(-result));
+    return (result);
+}
+
+static int path_exists(char* pfs_path_prefix, char* path)
+{
+    char tmp[256];
+    strcpy(tmp, "pfs0:");
+    strcat(tmp, pfs_path_prefix);
+    if (tmp[strlen(tmp) - 1] != '/')
+        strcat(tmp, "/");
+    strcat(tmp, path);
+
+    iox_stat_t stat;
+    int result = iomanx_getstat(tmp, &stat);
+
+    return result == 0;
+}
+
+static int create_dirs_from_path(char* pfs_path, char* path)
+{
+    char tmp[256];
+    strcpy(tmp, pfs_path);
+
+    while(*path)
+    {
+        char* slash_ptr = strstr(path, "/");
+        if(!slash_ptr) {return 0; }
+
+        int diff = slash_ptr - path;
+        char buff[256];
+
+        sprintf(buff, "%.*s", diff, path);
+
+        if(!path_exists(tmp, buff))
+        {
+            printf("Creating dir %s\n", buff);
+            int result = create_dir(tmp, buff);
+            if(result) { return result; }
+        }
+
+        strcat(tmp, "/");
+        strcat(tmp, buff);
+        path = slash_ptr + 1;
+    }
+
+    return 0;
 }
 
 static int do_lcd(context_t *ctx, int argc, char *argv[])
@@ -338,20 +398,6 @@ static int do_cd(context_t *ctx, int argc, char *argv[])
     return (result);
 }
 
-static int create_dir(char* pfs_path, char* dir_name)
-{
-    char tmp[256];
-    strcpy(tmp, "pfs0:");
-    strcat(tmp, pfs_path);
-    if (tmp[strlen(tmp) - 1] != '/')
-        strcat(tmp, "/");
-    strcat(tmp, dir_name);
-    int result = iomanx_mkdir(tmp, 0777);
-    if (result < 0)
-        fprintf(stderr, "(!) %s: %s.\n", tmp, strerror(-result));
-    return (result);
-}
-
 static int do_mkdir(context_t *ctx, int argc, char *argv[])
 {
     return create_dir(ctx->path, argv[1]);
@@ -454,67 +500,134 @@ static int put_file(char* pfs_path, char* filename)
     return (result);
 }
 
-static int path_exists(char* pfs_path_prefix, char* path)
+static int put_directory(char* pfs_path, char* dir_name)
 {
-    char tmp[256];
-    strcpy(tmp, "pfs0:");
-    strcat(tmp, pfs_path_prefix);
-    if (tmp[strlen(tmp) - 1] != '/')
-        strcat(tmp, "/");
-    strcat(tmp, path);
-
-    iox_stat_t stat;
-    int result = iomanx_getstat(tmp, &stat);
-
-    return result == 0;
-}
-
-static int create_dirs_from_path(char* pfs_path, char* path)
-{
-    char tmp[256];
-    strcpy(tmp, pfs_path);
-
-    while(*path)
+    if(!path_exists(pfs_path, dir_name))
     {
-        char* slash_ptr = strstr(path, "/");
-        if(!slash_ptr) {return 0; }
+        printf("Creating directory: %s/%s\n", pfs_path, dir_name);
+        create_dir(pfs_path, dir_name);
+    }
 
-        int diff = slash_ptr - path;
-        char buff[256];
+    char new_pfs_path[512];
+    strcpy(new_pfs_path, pfs_path);
+    if(pfs_path[strlen(pfs_path) - 1] != '/')
+        strcat(new_pfs_path, "/");
+    strcat(new_pfs_path, dir_name);
 
-        sprintf(buff, "%.*s", diff, path);
 
-        if(!path_exists(tmp, buff))
+    chdir(dir_name);
+    DIR *dir = opendir(".");
+    struct dirent *dir_ptr;
+    while ((dir_ptr=readdir(dir)) != NULL)
+    {
+        if(strcmp(dir_ptr->d_name, ".") == 0 ||
+           strcmp(dir_ptr->d_name, "..") == 0)
         {
-            printf("Creating dir %s\n", buff);
-            int result = create_dir(tmp, buff);
-            if(result) { return result; }
+            continue;
         }
 
-        strcat(tmp, "/");
-        strcat(tmp, buff);
-        path = slash_ptr + 1;
+        struct stat path_stat;
+        stat(dir_ptr->d_name, &path_stat);
+        if(S_ISREG(path_stat.st_mode))
+        {
+            printf("Copying file: %s/%s\n", new_pfs_path, dir_ptr->d_name);
+            int result = put_file(new_pfs_path, dir_ptr->d_name);
+            if(result) { return result; }
+        }
+        else if(S_ISDIR(path_stat.st_mode))
+        {
+            int result = put_directory(new_pfs_path, dir_ptr->d_name);
+            if(result) { return result; }
+        }
+        else
+        {
+            fprintf(stderr, "(!) Ignoring %s/%s!\n", new_pfs_path, dir_ptr->d_name);
+        }
     }
+
+    chdir("..");
 
     return 0;
 }
 
+static char* find_one_past_last(char* haystack, char needle)
+{
+    int len = strlen(haystack);
+
+    while(len)
+    {
+        if(haystack[--len] == needle)
+        {
+            return haystack + len + 1;
+        }
+    }
+
+    return NULL;
+}
+
 static int do_put(context_t *ctx, int argc, char *argv[])
 {
+    bool location_was_modified = false;
+
+    char old_ctx_path[256];
+    strcpy(old_ctx_path, ctx->path);
+
+    char old_lwd[512];
+    getcwd(old_lwd, sizeof(old_lwd));
+
+    char* old_argv_1 = argv[1];
+
     if(strstr(argv[1], "/"))
     {
         create_dirs_from_path(ctx->path, argv[1]);
+
+        char* suffix = find_one_past_last(argv[1], '/');
+        char prefix[256];
+        sprintf(prefix, "%.*s", suffix - argv[1], argv[1]);
+
+        strcpy(ctx->path, old_ctx_path);
+        strcat(ctx->path, "/");
+        strcat(ctx->path, prefix);
+
+        argv[1] = suffix;
+
+        chdir(prefix);
+
+        location_was_modified = true;
+    }
+
+    int result;
+
+    if(strstr(argv[1], "*"))
+    {
+        fprintf(stderr, "(!) Wildcards are not supported yet!\n");
+        return -1;
     }
 
     struct stat path_stat;
     stat(argv[1], &path_stat);
     if(S_ISDIR(path_stat.st_mode))
     {
-        fprintf(stderr, "(!) Directories are not supported.\n");
+        result = put_directory(ctx->path, argv[1]);
+    }
+    else if(S_ISREG(path_stat.st_mode))
+    {
+        result = put_file(ctx->path, argv[1]);
+    }
+    else
+    {
+        fprintf(stderr, "(!) Only files and directories are supported.\n");
         return -1;
     }
 
-    return put_file(ctx->path, argv[1]);
+    if(location_was_modified)
+    {
+        strcpy(ctx->path, old_ctx_path);
+        argv[1] = old_argv_1;
+        chdir(old_lwd);
+    }
+
+    return result;
 }
 
 static int do_rm(context_t *ctx, int argc, char *argv[])
