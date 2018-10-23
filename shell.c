@@ -13,6 +13,10 @@
 #include "iomanX_port.h"
 #include "hl.h"
 
+// TODO(erick): Add support for wildcards
+// TODO(erick) cd ../something do not work
+// TODO(erick): Add a recurse mode to rm command
+
 typedef struct
 {
     int setup;
